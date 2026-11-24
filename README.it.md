@@ -2,6 +2,9 @@
 
 *[Read in English](README.md)*
 
+![X-LIVE Concerto su iPad durante un concerto (modalità prova)](docs/screenshot.jpg)
+*L'app durante un concerto (modalità prova, scaletta di esempio).*
+
 App per iPad che comanda dal palco la **scheda di registrazione multitraccia X-LIVE** di un Behringer **X32** / Midas **M32**:
 avvia e ferma la registrazione e mette un marker a ogni brano della scaletta, conservando i titoli in un registro.
 L'audio resta sulla SD (file WAV). L'app comanda solo la scheda e ricorda a quale brano corrisponde ogni marker,

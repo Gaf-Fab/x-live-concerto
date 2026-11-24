@@ -2,6 +2,9 @@
 
 *[Leggi in italiano](README.it.md)*
 
+![X-LIVE Concerto on iPad during a show (practice mode)](docs/screenshot.jpg)
+*The app during a show (practice mode, demo setlist).*
+
 An iPad app that runs the **X-LIVE multitrack recorder card** of a Behringer **X32** / Midas **M32** from the stage:
 start and stop recording, and drop a marker at every song of your setlist, with the song names kept in a log.
 The audio stays on the SD card (WAV files). The app only controls the card and remembers which marker is which song,
