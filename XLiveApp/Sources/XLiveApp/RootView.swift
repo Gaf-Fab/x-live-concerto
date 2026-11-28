@@ -47,10 +47,11 @@ public struct RootView: View {
     // MARK: colonna sinistra
     private var controls: some View {
         let recording = c.concert.recording
+        let pausa = c.concert.inPause
         return VStack(spacing: 12) {
             HStack(spacing: 12) {
                 LCD(label: L.t("Tempo totale"), value: formatClock(ms: recording ? c.elapsedMs : 0), size: 34)
-                LCD(label: L.t("Tempo brano"), value: formatClock(ms: recording ? c.elapsedMs - c.songStartMs : 0), size: 34)
+                LCD(label: pausa ? L.t("Tempo pausa") : L.t("Tempo brano"), value: formatClock(ms: recording ? c.elapsedMs - c.songStartMs : 0), size: 34)
                 LCD(label: L.f("SD%@ rimasta", c.sdSlot.map { " \($0)" } ?? ""),
                     value: (recording ? c.remainingMs : c.sdRemainingMs).map { formatClock(ms: $0) } ?? (c.sdChecked ? L.t("NESSUNA SD") : "--:--:--"),
                     size: 34)
@@ -68,13 +69,18 @@ public struct RootView: View {
 
             Spacer(minLength: 4)
             if recording {
-                PanelButton(title: L.t("BRANO SUCCESSIVO"), fill: Theme.amber, textColor: .black, height: 110,
-                            enabled: c.concert.nextSong != nil && c.canCommand) { c.next() }
+                HStack(spacing: 12) {
+                    PanelButton(title: L.t("FINE BRANO (PAUSA)"), height: 110,
+                                enabled: c.concert.currentIsOpen && c.canCommand) { c.endSong() }
+                        .frame(maxWidth: 260)
+                    PanelButton(title: pausa ? L.t("INIZIA PROSSIMO BRANO") : L.t("BRANO SUCCESSIVO"),
+                                fill: Theme.amber, textColor: .black, height: 110,
+                                enabled: c.concert.nextSong != nil && c.canCommand) { c.next() }
+                }
             }
             HStack(spacing: 12) {
                 PanelButton(title: L.t("INDIETRO"), enabled: recording && c.concert.entries.count > 1) { c.back() }
                 PanelButton(title: L.t("SALTA BRANO"), enabled: c.concert.nextSong != nil) { c.skip() }
-                PanelButton(title: L.t("MARKER EXTRA"), enabled: recording && c.canCommand) { c.extra() }
             }
             if !recording, let path = c.savedPath {
                 ShareLink(item: URL(fileURLWithPath: path)) {
@@ -102,7 +108,8 @@ public struct RootView: View {
 
     private var currentTitle: String {
         guard c.concert.recording else { return c.concert.entries.isEmpty ? L.t("Pronto") : L.t("Concerto finito") }
-        if let e = c.concert.entries.last { return e.kind == .extra ? e.title : e.title }
+        if c.concert.inPause { return L.t("PAUSA") }
+        if let e = c.concert.entries.last { return e.title }
         return "—"
     }
 
@@ -115,6 +122,10 @@ public struct RootView: View {
                 Button(L.t("+ Brano")) { showAdd = true }
                     .disabled(!c.canEditSetlist)
                 Spacer()
+                if let v = c.concert.setlist.venue {
+                    Label(v, systemImage: "mappin.and.ellipse").font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Theme.amber).lineLimit(1)
+                }
             }
             .buttonStyle(.bordered)
             if !c.canEditSetlist {
@@ -210,6 +221,7 @@ public struct RootView: View {
                 Circle().fill(c.recState == .recording ? Theme.rec : Theme.dim).frame(width: 12, height: 12)
                 Text(c.recState == .recording ? "REC" : L.t("fermo"))
             }
+            Text("v\(Versione.numero) · \(Versione.data)").font(.system(size: 12)).foregroundStyle(Theme.dim).lineLimit(1)
             Spacer()
             Toggle(L.t("Blocco modifiche"), isOn: $c.locked).toggleStyle(.switch).fixedSize()
             Button(L.t("Scaletta")) { showSetlist = true }.disabled(c.concert.recording)
@@ -292,11 +304,14 @@ struct SetlistSheet: View {
             TextField(L.t("Band (es. Il mio gruppo)"), text: $band).textFieldStyle(.roundedBorder)
             Text(L.t("Un brano per riga. Righe come \"Set 1:\", \"Acustico:\", \"Bis:\" aprono un nuovo set."))
                 .font(.footnote).foregroundStyle(.secondary)
+            Text(L.t("In cima puoi scrivere il locale: \"Locale: Bar Centrale\". Dà il nome alla cartella della serata."))
+                .font(.footnote).foregroundStyle(.secondary)
             TextEditor(text: $text).font(.system(size: 16, design: .monospaced))
                 .frame(minHeight: 280).border(Color.gray.opacity(0.4))
             HStack {
                 Button(L.t("Importa file di testo…")) { importing = true }
                 Spacer()
+                if let v = Setlist.parse(text).venue { Label(v, systemImage: "mappin.and.ellipse").foregroundStyle(.secondary) }
                 Text(L.f("%d brani", Setlist.parse(text).songs.count)).foregroundStyle(.secondary)
                 Button(L.t("Annulla")) { isPresented = false }
                 Button(L.t("Usa scaletta")) { c.loadSetlist(text: text, band: band); isPresented = false }

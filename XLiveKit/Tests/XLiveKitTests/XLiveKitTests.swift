@@ -131,12 +131,52 @@ struct ConcertTests {
         #expect(songs[0]["end_marker"] as? Int == 2)
         #expect(songs[1]["marker"] as? Int == 3)
     }
+    @Test func venueLineIsNotASong() throws {
+        let s = Setlist.parse("Locale: Bar Centrale\nSet 1:\nA\nB")
+        #expect(s.venue == "Bar Centrale" && s.songs.map(\.title) == ["A", "B"])
+        #expect(Setlist.parse("venue - Blue Note\nA").venue == "Blue Note")
+        #expect(Setlist.parse("@ Bar Sport\nA").venue == "Bar Sport")
+        #expect(Setlist.parse("Set 1:\nA").venue == nil)
+        #expect(Setlist.parse("Locale:\nA").songs.first?.setName == "Locale")   // "Locale:" da solo resta un set
+        var c = Concert(setlist: Setlist.parse("Locale: Bar Centrale\nA", band: "Demo"))
+        _ = c.begin()
+        let json = try JSONSerialization.jsonObject(with: c.exportJSON()) as! [String: Any]
+        #expect(json["venue"] as? String == "Bar Centrale")
+    }
+    @Test func endSongOpensPauseUntilNext() throws {
+        var c = make()
+        #expect(c.endSong() == [])                       // prima dell'inizio non fa nulla
+        _ = c.begin()
+        #expect(c.endSong() == [.addMarker] && c.inPause)
+        #expect(c.endSong() == [])                       // già in pausa: niente secondo marker
+        #expect(c.nextSong?.title == "Human highway")    // il prossimo resta quello
+        _ = c.next()
+        #expect(!c.inPause && c.currentSong?.title == "Human highway")
+        let json = try JSONSerialization.jsonObject(with: c.exportJSON()) as! [String: Any]
+        #expect((json["songs"] as! [[String: Any]])[0]["end_marker"] as? Int == 2)
+        #expect((json["extras"] as! [[String: Any]]).first?["label"] as? String == "Pausa")
+    }
+    @Test func undoPauseReopensSong() {
+        var c = make()
+        _ = c.begin(); _ = c.endSong()
+        c.back()
+        #expect(!c.inPause && c.currentIsOpen && c.currentSong?.title == "Out on the weekend")
+    }
     @Test func reconcileWarnsOnMismatch() {
         var c = make()
         _ = c.begin(); _ = c.next()
         #expect(c.reconcile(deviceMarkerMs: [1000, 2000]) == nil)
         #expect(c.entries[1].markerMs == 2000)
         #expect(c.reconcile(deviceMarkerMs: [1000]) != nil)
+    }
+    @Test func markerTimesGoIntoRegistry() throws {
+        var c = make()
+        _ = c.begin(); _ = c.next(); _ = c.extra()
+        #expect(c.reconcile(deviceMarkerMs: [12610, 22910, 30000]) == nil)
+        let json = try JSONSerialization.jsonObject(with: c.exportJSON()) as! [String: Any]
+        let songs = json["songs"] as! [[String: Any]]
+        #expect(songs.map { $0["marker_ms"] as? Int } == [12610, 22910])
+        #expect((json["extras"] as! [[String: Any]]).first?["marker_ms"] as? Int == 30000)
     }
     @Test func endStopsRecording() {
         var c = make()

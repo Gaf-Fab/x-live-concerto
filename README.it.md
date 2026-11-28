@@ -13,8 +13,12 @@ così il giorno dopo sai esattamente dove inizia ogni canzone.
 ## Cosa fa
 - **Scaletta**: incolli un brano per riga o importi un file .txt / .rtf. Righe come `Set 1:`, `Acustico:`, `Bis:` aprono un nuovo set;
   righe come `- parlato -` o `- talk -` sono momenti parlati (mostrati in grigio e saltati in automatico).
+  Una prima riga facoltativa `Locale: Bar Centrale` indica il locale: si vede nell'app e finisce nel registro.
 - **START SHOW** avvia la registrazione e mette il primo marker. **NEXT SONG** mette un marker e passa al brano successivo.
-- **Indietro**, **Salta brano**, **Marker extra** (parlato / pausa), **Fine concerto**. Un tocco su un brano lo rende il prossimo,
+- **FINE BRANO (PAUSA)** chiude il brano e apre una pausa (parlato, accordature): lo schermo scrive PAUSA con il tempo di
+  pausa e **INIZIA PROSSIMO BRANO** fa partire il brano dopo quando la band è pronta. Le pause sono segnate nel registro,
+  così restano fuori dai brani.
+- **Indietro**, **Salta brano**, **Fine concerto**. Un tocco su un brano lo rende il prossimo,
   **Riordina** per trascinare i brani, **+ Brano** per aggiungerne uno fuori scaletta.
 - Trova la console in rete, oppure scrivi tu l'indirizzo IP.
 - Avvisa se la console non risponde (continua a riprovare) o se i marker della console e quelli dell'app non coincidono.
@@ -48,12 +52,9 @@ OSC su UDP porta 10023. La registrazione si avvia e si ferma scrivendo `/-stat/u
 è il registro dell'app che collega il marker N al titolo del brano.
 
 ## Problemi noti (ottimi per iniziare a contribuire!)
-- **Il primo marker può arrivare in ritardo (~12 s).** Dopo START SHOW l'app aspetta che la console dica "in registrazione",
-  ma la console non manda aggiornamenti da sola, quindi il marker parte solo allo scadere dell'attesa. Soluzione: interrogare
-  `/-stat/urec/state` e mettere il marker appena risulta in registrazione.
-- **Falso avviso "i marker non coincidono" durante la registrazione.** Il contatore dell'app aspetta aggiornamenti di
-  `/-urec/markermax` che non arrivano. Soluzione: interrogare `/-urec/markermax`.
-- **Nel registro mancano i tempi dei marker** (ci sono solo i numeri). Si possono aggiungere leggendo `/-urec/marker/NNN/time` a fine serata.
+- Nessuno aperto al momento. Il primo marker in ritardo, il falso avviso "i marker non coincidono" e i tempi dei marker
+  mancanti sono stati corretti nella 1.1 (vedi [CHANGELOG.md](CHANGELOG.md)): la console non manda da sola lo stato del
+  registratore, quindi ora l'app lo chiede.
 
 ## Idee per il futuro
 - VU meter degli ingressi sull'iPad (sottoscrizione `/meters`).

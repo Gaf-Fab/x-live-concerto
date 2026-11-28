@@ -13,8 +13,11 @@ so the morning after you know exactly where every song starts.
 ## Features
 - **Setlist**: paste one song per line or import a .txt / .rtf file. Lines like `Set 1:`, `Acoustic:`, `Encore:` start a new set;
   lines like `- talk -` are treated as speech (shown dimmed and skipped automatically).
+  An optional first line `Venue: Blue Note` (or `Locale: …`) names the venue: it is shown in the app and saved in the log.
 - **START SHOW** starts recording and places the first marker. **NEXT SONG** places a marker and moves on.
-- **UNDO**, **SKIP SONG**, **EXTRA MARKER** (talk / break), **END OF SHOW**. Tap a song to make it the next one,
+- **END SONG (BREAK)** closes the song and starts a break (talk, tuning): the screen shows BREAK with a break timer and
+  **START NEXT SONG** starts the next one when the band is ready. Breaks are marked in the log, so they can be kept out of the songs.
+- **UNDO**, **SKIP SONG**, **END OF SHOW**. Tap a song to make it the next one,
   **Reorder** to drag songs, **+ Song** to add one that was not on the list.
 - Finds the console on the network, or you type its IP address.
 - Warns you if the console stops answering (it keeps retrying) or if the markers on the console and in the app do not match.
@@ -48,12 +51,8 @@ OSC over UDP port 10023. Recording is started/stopped by writing `/-stat/urec/st
 the app's log is what links marker N to a song title.
 
 ## Known issues (good first contributions!)
-- **First marker can be late (~12 s).** After START SHOW the app waits for the console to report "recording", but the console
-  does not send state updates on its own, so the first marker is placed only when the wait times out. Fix: query
-  `/-stat/urec/state` explicitly and place the marker as soon as it reports recording.
-- **False banner "markers don't match" during recording.** The app's marker counter waits for `/-urec/markermax` updates
-  that never arrive. Fix: query `/-urec/markermax` explicitly.
-- **Marker times are not written in the log**: only marker numbers. Reading `/-urec/marker/NNN/time` at the end would add them.
+- None open right now. The late first marker, the false "markers don't match" banner and the missing marker times were
+  fixed in 1.1 (see [CHANGELOG.md](CHANGELOG.md)): the console does not push recorder state, so the app now asks for it.
 
 ## Ideas / roadmap
 - Input VU meters on the iPad (via `/meters` subscription).

@@ -51,6 +51,8 @@ public struct Concert: Codable, Sendable {
         }
     }
     public var currentIsOpen: Bool { entries.last?.kind == .song }
+    /// In pausa: il brano è stato chiuso con "Fine brano" e il prossimo non è ancora partito.
+    public var inPause: Bool { recording && entries.last?.kind == .extra }
     /// Indice del prossimo brano vero: salta le voci "talk".
     public var nextSongIndex: Int? {
         var j = nextIndex
@@ -138,6 +140,13 @@ public struct Concert: Codable, Sendable {
         skipped.insert(setlist.songs[j].id); nextIndex = j + 1
     }
 
+    /// "Fine brano": chiude il brano in corso e apre una pausa (parlato, accordature). Il brano dopo parte con "next".
+    /// La pausa resta fuori dal brano e gli script la salvano a parte (cartella _pause).
+    public mutating func endSong(now: Date = Date()) -> [ConcertAction] {
+        guard recording, currentIsOpen else { return [] }
+        return extra(label: "Pausa", now: now)
+    }
+
     /// "Marker extra" (chiacchiere, pausa): chiude il brano in corso senza aprirne uno.
     public mutating func extra(label: String = "Extra", now: Date = Date()) -> [ConcertAction] {
         guard recording else { return [] }
@@ -188,9 +197,14 @@ public struct Concert: Codable, Sendable {
         var songs: [[String: Any]] = []
         var extras: [[String: Any]] = []
         for e in entries {
-            if e.kind == .extra { extras.append(["label": e.title, "marker": e.marker, "segment": e.segment]); continue }
+            if e.kind == .extra {
+                var x: [String: Any] = ["label": e.title, "marker": e.marker, "segment": e.segment]
+                if let ms = e.markerMs { x["marker_ms"] = ms }
+                extras.append(x); continue
+            }
             var d: [String: Any] = ["title": e.title, "set": e.setName, "marker": e.marker, "segment": e.segment,
                                     "time": ISO8601DateFormatter().string(from: e.wallClock)]
+            if let ms = e.markerMs { d["marker_ms"] = ms }   // posizione del marker sulla SD (ms dall'inizio della sessione)
             let valid = entries.filter { $0.segment == e.segment }.map(\.marker).sorted()
             if let end = valid.first(where: { $0 > e.marker }) { d["end_marker"] = end }
             songs.append(d)
@@ -200,6 +214,7 @@ public struct Concert: Codable, Sendable {
                                   "discarded_markers": discarded0,
                                   "discarded": zip(discardedMarkers, discardedSegments).map { ["marker": $0.0, "segment": $0.1] }]
         if !channelNames.isEmpty { doc["channels"] = channelNames }
+        if let v = setlist.venue, !v.isEmpty { doc["venue"] = v }   // locale: nome della cartella della serata
         // Una voce per sessione registrata (in ordine di tratto); "session" resta la prima, per i registri di una sola sessione.
         let refs = sessions.map { r -> [String: Any] in r.map { ["name": $0.name, "number": $0.number] } ?? [:] }
         if sessions.contains(where: { $0 != nil }) { doc["sessions"] = refs }

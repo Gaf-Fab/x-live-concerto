@@ -21,7 +21,9 @@ public struct Song: Equatable, Codable, Sendable, Identifiable {
 public struct Setlist: Equatable, Codable, Sendable {
     public var band: String
     public var songs: [Song]
-    public init(band: String = "", songs: [Song] = []) { self.band = band; self.songs = songs }
+    /// Locale della serata ("Bar Centrale"), dalla riga "Locale: …" della scaletta. Dà il nome alla cartella della serata.
+    public var venue: String?
+    public init(band: String = "", songs: [Song] = [], venue: String? = nil) { self.band = band; self.songs = songs; self.venue = venue }
 
     public var setNames: [String] {
         var seen: [String] = []
@@ -35,13 +37,19 @@ public struct Setlist: Equatable, Codable, Sendable {
     /// - Un'intestazione apre un nuovo set: riga che finisce con ":" ("Set 1:"), oppure "Set 2", "Bis",
     ///   "Encores", "Acustico", "Intro", "Show". Le righe vuote e quelle con # sono ignorate.
     /// - I titoli con virgola vanno su una riga sola ("Hey hey, my my"): la riga non viene spezzata.
+    /// - "Locale: Bar Centrale" (anche "Venue: …" o "@ Bar Centrale") indica il locale: non è un brano.
     public static func parse(_ text: String, band: String = "") -> Setlist {
         let headingWords: Set<String> = ["intro", "show", "bis", "encore", "encores", "acustico", "acoustic", "finale"]
         var current = "Set 1"
         var songs: [Song] = []
+        var venue: String?
         for raw in text.split(whereSeparator: \.isNewline) {
             var line = raw.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("#") { continue }
+            if let r = line.range(of: #"^(?i)(locale|venue)\s*[:\-–]\s*|^@\s*"#, options: .regularExpression) {
+                let nome = line[r.upperBound...].trimmingCharacters(in: .whitespaces)
+                if !nome.isEmpty { venue = venue ?? nome; continue }
+            }
             line = line.replacingOccurrences(of: #"^\s*\d+\s*[\.\)\-–]\s*"#, with: "", options: .regularExpression)
             line = line.trimmingCharacters(in: CharacterSet.whitespaces.union(CharacterSet(charactersIn: "“”\"")))
             if line.isEmpty { continue }
@@ -54,6 +62,6 @@ public struct Setlist: Equatable, Codable, Sendable {
             }
             songs.append(Song(title: line, setName: current))
         }
-        return Setlist(band: band, songs: songs)
+        return Setlist(band: band, songs: songs, venue: venue)
     }
 }

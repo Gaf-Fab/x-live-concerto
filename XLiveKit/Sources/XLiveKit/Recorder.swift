@@ -56,6 +56,29 @@ public struct XLiveRecorder: Sendable {
             channels: try await tr?.int)
     }
 
+    /// Stato del registratore chiesto alla console (nil se non risponde). La console NON lo manda da sola
+    /// (nemmeno con /xremote): va chiesto ogni volta.
+    public func state(timeout: Duration = .milliseconds(500)) async throws -> RecorderState? {
+        try await console.query("/-stat/urec/state", timeout: timeout)?.int.map(RecorderState.init(raw:))
+    }
+
+    /// Numero di marker della sessione in corso/ultima, chiesto alla console (nil se non risponde).
+    public func markerCount(timeout: Duration = .milliseconds(800)) async throws -> Int? {
+        try await console.query("/-urec/markermax", timeout: timeout)?.int
+    }
+
+    /// Letture da fare di continuo durante la registrazione, come eventi: stato, tempo trascorso, tempo rimasto, marker.
+    /// Un valore a cui la console non risponde viene semplicemente omesso (non diventa "fermo" o 0).
+    public func poll() async -> [RecorderEvent] {
+        let t: Duration = .milliseconds(800)
+        async let st = console.query("/-stat/urec/state", timeout: t)
+        async let et = console.query("/-stat/urec/etime", timeout: t)
+        async let rt = console.query("/-stat/urec/rtime", timeout: t)
+        async let mm = console.query("/-urec/markermax", timeout: t)
+        let replies = [(try? await st) ?? nil, (try? await et) ?? nil, (try? await rt) ?? nil, (try? await mm) ?? nil]
+        return replies.compactMap { $0.flatMap(Self.event(from:)) }
+    }
+
     /// Nomi dei canali del mixer (1...count), come scritti sulla console, letti tutti insieme (meno di un secondo).
     /// Un nome che la console non dà resta vuoto.
     public func channelNames(count: Int = 16) async throws -> [String] {

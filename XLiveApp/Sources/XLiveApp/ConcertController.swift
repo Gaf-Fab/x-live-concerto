@@ -35,7 +35,10 @@ public final class ConcertController: ObservableObject {
     private var console: Console?
     private var recorder: XLiveRecorder?
     private var deviceMarkers = 0
+    private var startBeforePause: Int?             // inizio del brano chiuso con "Fine brano" (per INDIETRO)
+    private var starting = false                   // REC inviato, la console non ha ancora confermato
     private var eventTask: Task<Void, Never>?
+    private var statusTask: Task<Void, Never>?
     private var sdTask: Task<Void, Never>?
     private var connectTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
@@ -83,7 +86,7 @@ public final class ConcertController: ObservableObject {
     /// (Ri)crea il collegamento: nuovo socket, controllo con /xinfo, letture iniziali, eventi. true se la console risponde.
     @discardableResult
     private func establish() async -> Bool {
-        eventTask?.cancel(); sdTask?.cancel()
+        eventTask?.cancel(); sdTask?.cancel(); statusTask?.cancel()
         await console?.stop()
         let c = Console(host: host)
         console = c
@@ -105,6 +108,19 @@ public final class ConcertController: ObservableObject {
         }
         eventTask = Task { [weak self] in
             for await e in await r.events() { self?.handle(e) }
+        }
+        // La console non manda da sola stato, tempi e marker del registratore: durante la registrazione li chiediamo
+        // ogni secondo (servono per i tempi a schermo, per l'avviso "registrazione fermata" e per il controllo dei marker).
+        statusTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let attivo = self.map({ $0.concert.recording || $0.recState == .recording }) else { return }
+                if attivo {
+                    for e in await r.poll() { self?.handle(e) }
+                    try? await Task.sleep(for: .seconds(1))
+                } else {
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+            }
         }
         return true
     }
@@ -154,8 +170,10 @@ public final class ConcertController: ObservableObject {
         guard concert.recording else { return }
         Task {
             try? await Task.sleep(for: .seconds(1.5))
-            if deviceMarkers != concert.markerCount {
-                banner = L.f("Collegamento ripristinato, ma i marker non tornano: console %d, registro %d.", deviceMarkers, concert.markerCount)
+            guard let rec = recorder, let n = try? await rec.markerCount() else { return }
+            deviceMarkers = n
+            if n != concert.markerCount {
+                banner = L.f("Collegamento ripristinato, ma i marker non tornano: console %d, registro %d.", n, concert.markerCount)
             }
         }
     }
@@ -214,7 +232,7 @@ public final class ConcertController: ObservableObject {
         switch e {
         case .state(let s):
             recState = s
-            if s == .stopped && concert.recording { banner = L.t("ATTENZIONE: la registrazione si è fermata sulla console.") }
+            if s == .stopped && concert.recording && !starting { banner = L.t("ATTENZIONE: la registrazione si è fermata sulla console.") }
         case .elapsedMs(let v): elapsedMs = v
         case .remainingMs(let v): remainingMs = v
         case .markerCount(let n): deviceMarkers = n
@@ -270,7 +288,20 @@ public final class ConcertController: ObservableObject {
         guard canCommand else { banner = L.t("Collegamento perso: il marker extra NON è stato messo."); return }
         perform(concert.extra())
     }
-    public func back() { concert.back(); save() }
+    /// Fine brano: il brano si chiude e parte la pausa; "Tempo brano" diventa il tempo di pausa.
+    public func endSong() {
+        guard canCommand else { banner = L.t("Collegamento perso: la fine del brano NON è stata segnata."); return }
+        let ms = elapsedMs
+        let azioni = concert.endSong()
+        guard !azioni.isEmpty else { return }
+        startBeforePause = songStartMs
+        perform(azioni); songStartMs = ms
+    }
+    public func back() {
+        let eraPausa = concert.inPause
+        concert.back(); save()
+        if eraPausa, let s = startBeforePause { songStartMs = s; startBeforePause = nil }   // il brano riprende a contare
+    }
     public func end() {
         guard canCommand else { banner = L.t("Collegamento perso: non posso fermare la registrazione. Premi STOP sulla console."); return }
         perform(concert.end())
@@ -288,10 +319,20 @@ public final class ConcertController: ObservableObject {
                 for a in actions {
                     switch a {
                     case .startRecording:
+                        starting = true
+                        defer { starting = false }
                         try await rec.startRecording()
-                        // La console può impiegare diversi secondi a dichiarare "in registrazione": aspettiamo fino a 12 s.
-                        for _ in 0..<120 where recState != .recording { try? await Task.sleep(for: .milliseconds(100)) }
-                        if recState != .recording { banner = L.t("La console non conferma la registrazione: controlla la SD e lo slot.") }
+                        // Chiediamo noi lo stato (la console non lo comunica da sola) finché non è "in registrazione",
+                        // al massimo 12 s: il primo marker parte appena la registrazione è partita davvero.
+                        let inizio = ContinuousClock.now
+                        var partita = false
+                        while ContinuousClock.now - inizio < .seconds(12) {
+                            if let s = try? await rec.state(), s == .recording { partita = true; break }
+                            try? await Task.sleep(for: .milliseconds(100))
+                        }
+                        dbg("REC confermato: \(partita) dopo \(ContinuousClock.now - inizio)")
+                        if partita { recState = .recording }
+                        else { banner = L.t("La console non conferma la registrazione: controlla la SD e lo slot.") }
                     case .addMarker: try await rec.addMarker()
                     case .stopRecording:
                         try await rec.stopRecording()
@@ -299,11 +340,14 @@ public final class ConcertController: ObservableObject {
                     }
                 }
             } catch { banner = L.f("Comando non inviato: %@", error.localizedDescription) }
-            if concert.recording {
-                try? await Task.sleep(for: .seconds(2))
-                if deviceMarkers != concert.markerCount {
-                    banner = L.f("Marker: la console ne ha %d, il registro %d.", deviceMarkers, concert.markerCount)
-                }
+            // Controllo dei marker: il numero va chiesto alla console. Se non torna si riprova una volta
+            // (un NEXT appena premuto può essere ancora in viaggio) prima di avvisare.
+            for tentativo in 0..<2 where concert.recording {
+                try? await Task.sleep(for: .seconds(1))
+                guard let n = try? await rec.markerCount() else { break }
+                deviceMarkers = n
+                if n == concert.markerCount { break }
+                if tentativo == 1 { banner = L.f("Marker: la console ne ha %d, il registro %d.", n, concert.markerCount) }
             }
         }
     }
